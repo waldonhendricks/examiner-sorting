@@ -1,429 +1,330 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useMemo, useState } from "react";
+import type { ComponentType } from "react";
 import {
-  FileDown,
-  FileSpreadsheet,
-  ChevronDown,
-  ChevronRight,
   AlertTriangle,
-  ExternalLink,
-  BookOpen,
+  ArrowDownToLine,
+  Award,
+  BarChart3,
+  BookCopy,
+  ChevronDown,
+  ChevronUp,
+  Eye,
+  FileSpreadsheet,
+  GraduationCap,
 } from "lucide-react";
-import { Button } from "@/src/components/ui/button";
-import { Badge } from "@/src/components/ui/badge";
-import { Progress } from "@/src/components/ui/progress";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/src/components/ui/table";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/src/components/ui/card";
-import { Examiner, SearchResponse, ThesisSearchRequest } from "@/src/types";
-import {
-  formatScore,
-  formatNumber,
-  getScoreColor,
-  getScoreBgColor,
-  getSeverityColor,
-  cn,
-} from "@/src/lib/utils";
-import { downloadPDFReport, downloadExcelReport, triggerDownload } from "@/src/lib/api";
 import { toast } from "sonner";
 
+import { ExaminerDetail } from "@/components/examiner-detail";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { downloadExcelReport, downloadPDFReport } from "@/lib/api";
+import { cn, formatScore, getScoreColor } from "@/lib/utils";
+import type { ConflictFlag, Examiner, ThesisSearchRequest } from "@/types";
+
 interface ExaminerTableProps {
-  results: SearchResponse;
-  searchRequest: ThesisSearchRequest;
+  examiners: Examiner[];
+  request?: ThesisSearchRequest | null;
+  thesisTitle?: string;
+  extractedKeywords?: string[];
+  researchDomains?: string[];
 }
 
-function ScoreBar({ value, className }: { value: number; className?: string }) {
-  const color =
-    value >= 75 ? "bg-green-500" : value >= 50 ? "bg-yellow-500" : "bg-red-400";
-  return (
-    <div className={cn("flex items-center gap-2", className)}>
-      <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
-        <div
-          className={cn("h-full rounded-full transition-all", color)}
-          style={{ width: `${Math.min(value, 100)}%` }}
-        />
-      </div>
-      <span className={cn("text-xs font-semibold w-10 text-right", getScoreColor(value))}>
-        {formatScore(value)}
-      </span>
-    </div>
+const conflictVariant: Record<ConflictFlag["severity"], "secondary" | "destructive" | "outline"> = {
+  low: "outline",
+  medium: "secondary",
+  high: "destructive",
+};
+
+export function ExaminerTable({
+  examiners,
+  request,
+  thesisTitle,
+  extractedKeywords,
+  researchDomains,
+}: ExaminerTableProps) {
+  const [expandedRows, setExpandedRows] = useState<number[]>([]);
+  const [exporting, setExporting] = useState<"pdf" | "excel" | null>(null);
+
+  const rankedExaminers = useMemo(
+    () => [...examiners].sort((a, b) => b.final_score - a.final_score),
+    [examiners],
   );
-}
 
-function ExaminerRow({
-  examiner,
-  rank,
-}: {
-  examiner: Examiner;
-  rank: number;
-}) {
-  const [expanded, setExpanded] = useState(false);
-
-  const conflictCount = examiner.conflict_flags.length;
-  const highConflicts = examiner.conflict_flags.filter((f) => f.severity === "high").length;
-
-  return (
-    <>
-      <TableRow
-        className="cursor-pointer hover:bg-muted/50"
-        onClick={() => setExpanded(!expanded)}
-      >
-        {/* Rank */}
-        <TableCell className="font-bold text-center w-12">
-          <span
-            className={cn(
-              "inline-flex items-center justify-center w-7 h-7 rounded-full text-sm font-bold",
-              rank === 1
-                ? "bg-yellow-100 text-yellow-800"
-                : rank === 2
-                ? "bg-gray-100 text-gray-700"
-                : rank === 3
-                ? "bg-orange-100 text-orange-700"
-                : "bg-muted text-muted-foreground"
-            )}
-          >
-            {rank}
-          </span>
-        </TableCell>
-
-        {/* Name & University */}
-        <TableCell>
-          <div className="font-semibold text-sm">{examiner.name}</div>
-          <div className="text-xs text-muted-foreground">{examiner.university}</div>
-          {examiner.department && (
-            <div className="text-xs text-muted-foreground italic">{examiner.department}</div>
-          )}
-        </TableCell>
-
-        {/* Match Score */}
-        <TableCell className="min-w-[140px]">
-          <ScoreBar value={examiner.final_score} />
-          <div className="text-xs text-muted-foreground mt-1">
-            Similarity: {formatScore(examiner.similarity_score)}
-          </div>
-        </TableCell>
-
-        {/* Metrics */}
-        <TableCell className="text-center">
-          <span className="font-semibold">{examiner.h_index}</span>
-        </TableCell>
-        <TableCell className="text-center text-sm">
-          {formatNumber(examiner.citation_count)}
-        </TableCell>
-        <TableCell className="text-center text-sm">
-          {examiner.recent_publication_count}
-        </TableCell>
-
-        {/* Academic Rank */}
-        <TableCell className="text-sm text-muted-foreground hidden lg:table-cell">
-          {examiner.academic_rank || "—"}
-        </TableCell>
-
-        {/* Conflicts */}
-        <TableCell>
-          {conflictCount === 0 ? (
-            <span className="text-xs text-green-600 font-medium">None</span>
-          ) : (
-            <span
-              className={cn(
-                "inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full",
-                highConflicts > 0
-                  ? "bg-red-100 text-red-700"
-                  : "bg-yellow-100 text-yellow-700"
-              )}
-            >
-              <AlertTriangle className="h-3 w-3" />
-              {conflictCount} flag{conflictCount !== 1 ? "s" : ""}
-            </span>
-          )}
-        </TableCell>
-
-        {/* Expand */}
-        <TableCell className="w-8">
-          {expanded ? (
-            <ChevronDown className="h-4 w-4 text-muted-foreground" />
-          ) : (
-            <ChevronRight className="h-4 w-4 text-muted-foreground" />
-          )}
-        </TableCell>
-      </TableRow>
-
-      {/* Expanded Details */}
-      {expanded && (
-        <TableRow>
-          <TableCell colSpan={9} className="bg-muted/30 p-0">
-            <div className="p-4 space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {/* Score Breakdown */}
-                <div className="space-y-2">
-                  <h4 className="text-sm font-semibold">Score Breakdown</h4>
-                  <div className="space-y-1.5">
-                    {[
-                      { label: "Topic Similarity (40%)", value: examiner.score_breakdown.topic_similarity },
-                      { label: "H-index (20%)", value: examiner.score_breakdown.h_index_score },
-                      { label: "Citations (15%)", value: examiner.score_breakdown.citation_score },
-                      { label: "Recent Pubs (15%)", value: examiner.score_breakdown.recent_pubs_score },
-                      { label: "Academic Rank (10%)", value: examiner.score_breakdown.academic_rank_score },
-                    ].map(({ label, value }) => (
-                      <div key={label} className="space-y-0.5">
-                        <div className="flex justify-between text-xs">
-                          <span className="text-muted-foreground">{label}</span>
-                          <span className={cn("font-medium", getScoreColor(value))}>
-                            {formatScore(value)}
-                          </span>
-                        </div>
-                        <Progress value={value} className="h-1.5" />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Research Interests & Contact */}
-                <div className="space-y-3">
-                  <div>
-                    <h4 className="text-sm font-semibold mb-1.5">Research Interests</h4>
-                    <div className="flex flex-wrap gap-1">
-                      {examiner.research_interests.slice(0, 8).map((interest) => (
-                        <span
-                          key={interest}
-                          className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full"
-                        >
-                          {interest}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                  {(examiner.email || examiner.orcid || examiner.profile_url) && (
-                    <div>
-                      <h4 className="text-sm font-semibold mb-1">Contact</h4>
-                      <div className="space-y-1 text-xs text-muted-foreground">
-                        {examiner.email && (
-                          <div>
-                            <a href={`mailto:${examiner.email}`} className="text-primary hover:underline">
-                              {examiner.email}
-                            </a>
-                          </div>
-                        )}
-                        {examiner.orcid && (
-                          <div className="flex items-center gap-1">
-                            <span>ORCID:</span>
-                            <a
-                              href={`https://orcid.org/${examiner.orcid}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-primary hover:underline flex items-center gap-1"
-                            >
-                              {examiner.orcid}
-                              <ExternalLink className="h-3 w-3" />
-                            </a>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Conflicts */}
-                <div>
-                  <h4 className="text-sm font-semibold mb-1.5">Conflict Assessment</h4>
-                  {examiner.conflict_flags.length === 0 ? (
-                    <p className="text-xs text-green-600">No conflicts detected.</p>
-                  ) : (
-                    <div className="space-y-1.5">
-                      {examiner.conflict_flags.map((flag, i) => (
-                        <div
-                          key={i}
-                          className={cn(
-                            "text-xs rounded-md px-2.5 py-1.5 border",
-                            getSeverityColor(flag.severity)
-                          )}
-                        >
-                          <div className="font-medium">{flag.type.replace(/_/g, " ")}</div>
-                          <div className="opacity-80">{flag.description}</div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Top Publications */}
-              {examiner.top_publications && examiner.top_publications.length > 0 && (
-                <div>
-                  <h4 className="text-sm font-semibold mb-2 flex items-center gap-1">
-                    <BookOpen className="h-4 w-4" />
-                    Top Publications
-                  </h4>
-                  <div className="space-y-2">
-                    {examiner.top_publications.slice(0, 3).map((pub) => (
-                      <div key={pub.id} className="text-xs bg-background rounded border p-2.5">
-                        <div className="font-medium line-clamp-2">
-                          {pub.doi ? (
-                            <a
-                              href={`https://doi.org/${pub.doi}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-primary hover:underline"
-                            >
-                              {pub.title}
-                            </a>
-                          ) : (
-                            pub.title
-                          )}
-                        </div>
-                        <div className="text-muted-foreground mt-0.5">
-                          {pub.journal && <span>{pub.journal} · </span>}
-                          {pub.year && <span>{pub.year} · </span>}
-                          <span>{formatNumber(pub.citation_count)} citations</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </TableCell>
-        </TableRow>
-      )}
-    </>
-  );
-}
-
-export function ExaminerTable({ results, searchRequest }: ExaminerTableProps) {
-  const [exportingPdf, setExportingPdf] = useState(false);
-  const [exportingExcel, setExportingExcel] = useState(false);
-
-  async function handlePdfExport() {
-    setExportingPdf(true);
-    try {
-      const blob = await downloadPDFReport(searchRequest, results.examiners);
-      triggerDownload(blob, `examiner_report_${new Date().toISOString().slice(0, 10)}.pdf`);
-      toast.success("PDF report downloaded");
-    } catch {
-      toast.error("Failed to generate PDF report");
-    } finally {
-      setExportingPdf(false);
-    }
-  }
-
-  async function handleExcelExport() {
-    setExportingExcel(true);
-    try {
-      const blob = await downloadExcelReport(searchRequest, results.examiners);
-      triggerDownload(blob, `examiner_report_${new Date().toISOString().slice(0, 10)}.xlsx`);
-      toast.success("Excel report downloaded");
-    } catch {
-      toast.error("Failed to generate Excel report");
-    } finally {
-      setExportingExcel(false);
-    }
-  }
-
-  if (results.examiners.length === 0) {
-    return (
-      <Card>
-        <CardContent className="py-12 text-center">
-          <p className="text-muted-foreground">
-            No examiners found matching your thesis topic from South African universities.
-          </p>
-          <p className="text-sm text-muted-foreground mt-1">
-            Try adding more keywords or broadening your abstract.
-          </p>
-        </CardContent>
-      </Card>
+  const toggleRow = (id: number) => {
+    setExpandedRows((current) =>
+      current.includes(id) ? current.filter((rowId) => rowId !== id) : [...current, id],
     );
-  }
+  };
+
+  const handleDownload = async (format: "pdf" | "excel") => {
+    if (!request || rankedExaminers.length === 0) {
+      toast.error("Search results are required before exporting a report.");
+      return;
+    }
+
+    setExporting(format);
+    try {
+      const blob =
+        format === "pdf"
+          ? await downloadPDFReport(request, rankedExaminers)
+          : await downloadExcelReport(request, rankedExaminers);
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      const slug = (request.thesis_title || "examiner-report")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/(^-|-$)/g, "")
+        .slice(0, 60);
+      anchor.href = url;
+      anchor.download = `${slug || "examiner-report"}.${format === "pdf" ? "pdf" : "xlsx"}`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success(`${format.toUpperCase()} report downloaded.`);
+    } catch (error) {
+      console.error(error);
+      toast.error(`Unable to generate the ${format.toUpperCase()} report right now.`);
+    } finally {
+      setExporting(null);
+    }
+  };
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <div className="flex items-start justify-between flex-wrap gap-3">
-          <div>
-            <CardTitle>
-              {results.total_found} Examiner{results.total_found !== 1 ? "s" : ""} Found
-            </CardTitle>
-            <CardDescription className="mt-1">
-              Ranked by weighted relevance score · Click a row to view details
-            </CardDescription>
-          </div>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handlePdfExport}
-              disabled={exportingPdf}
-            >
-              <FileDown className="mr-1.5 h-4 w-4" />
-              {exportingPdf ? "Generating…" : "Export PDF"}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleExcelExport}
-              disabled={exportingExcel}
-            >
-              <FileSpreadsheet className="mr-1.5 h-4 w-4" />
-              {exportingExcel ? "Generating…" : "Export Excel"}
-            </Button>
-          </div>
+    <Card className="border-primary/10 shadow-lg shadow-primary/5">
+      <CardHeader className="gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <CardTitle className="flex items-center gap-2 text-xl">
+            <GraduationCap className="h-5 w-5 text-primary" />
+            Ranked examiner recommendations
+          </CardTitle>
+          <CardDescription className="mt-2 max-w-3xl">
+            Review ranked experts, compare impact metrics, and inspect conflicts before making a final nomination.
+          </CardDescription>
+          {thesisTitle ? (
+            <p className="mt-3 text-sm font-medium text-foreground/80">Search context: {thesisTitle}</p>
+          ) : null}
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Button
+            variant="outline"
+            onClick={() => void handleDownload("pdf")}
+            disabled={exporting !== null || rankedExaminers.length === 0}
+          >
+            <ArrowDownToLine className="mr-2 h-4 w-4" />
+            {exporting === "pdf" ? "Exporting PDF..." : "Export PDF"}
+          </Button>
+          <Button
+            onClick={() => void handleDownload("excel")}
+            disabled={exporting !== null || rankedExaminers.length === 0}
+          >
+            <FileSpreadsheet className="mr-2 h-4 w-4" />
+            {exporting === "excel" ? "Exporting Excel..." : "Export Excel"}
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="grid gap-4 md:grid-cols-3">
+          <SummaryTile label="Total results" value={rankedExaminers.length.toString()} icon={Award} />
+          <SummaryTile
+            label="Research domains"
+            value={researchDomains?.length ? researchDomains.join(", ") : "Awaiting search results"}
+            icon={BarChart3}
+          />
+          <SummaryTile
+            label="Keywords extracted"
+            value={extractedKeywords?.length ? extractedKeywords.join(", ") : "Awaiting search results"}
+            icon={BookCopy}
+          />
         </div>
 
-        {/* Extracted keywords / domains */}
-        {(results.extracted_keywords?.length > 0 || results.research_domains?.length > 0) && (
-          <div className="flex flex-wrap gap-x-4 gap-y-1.5 mt-2 text-xs text-muted-foreground">
-            {results.extracted_keywords?.length > 0 && (
-              <span>
-                <span className="font-medium text-foreground">Topics: </span>
-                {results.extracted_keywords.slice(0, 6).join(", ")}
-              </span>
-            )}
-            {results.research_domains?.length > 0 && (
-              <span>
-                <span className="font-medium text-foreground">Domains: </span>
-                {results.research_domains.join(", ")}
-              </span>
-            )}
+        {rankedExaminers.length === 0 ? (
+          <div className="rounded-xl border border-dashed bg-muted/20 px-6 py-16 text-center">
+            <p className="text-lg font-semibold">No results</p>
+            <p className="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">
+              Submit a thesis title and abstract to receive a ranked shortlist of potential external examiners.
+            </p>
           </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-16">Rank</TableHead>
+                <TableHead>Name &amp; university</TableHead>
+                <TableHead className="min-w-[220px]">Similarity score</TableHead>
+                <TableHead>H-index</TableHead>
+                <TableHead>Citations</TableHead>
+                <TableHead>Recent pubs</TableHead>
+                <TableHead>Academic rank</TableHead>
+                <TableHead>Conflicts</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rankedExaminers.map((examiner, index) => {
+                const isExpanded = expandedRows.includes(examiner.id);
+                return (
+                  <Fragment key={examiner.id}>
+                    <TableRow>
+                      <TableCell className="font-semibold">#{index + 1}</TableCell>
+                      <TableCell>
+                        <div>
+                          <p className="font-semibold">{examiner.name}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {examiner.university} · {examiner.department}
+                          </p>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-sm">
+                            <span className={cn("font-semibold", getScoreColor(examiner.similarity_score))}>
+                              {formatScore(examiner.similarity_score)}
+                            </span>
+                            <span className="text-muted-foreground">Final {formatScore(examiner.final_score)}</span>
+                          </div>
+                          <Progress value={examiner.similarity_score} className="h-2.5" />
+                        </div>
+                      </TableCell>
+                      <TableCell>{examiner.h_index}</TableCell>
+                      <TableCell>{examiner.citation_count.toLocaleString()}</TableCell>
+                      <TableCell>{examiner.recent_publication_count}</TableCell>
+                      <TableCell>{examiner.academic_rank || "—"}</TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap gap-2">
+                          {examiner.conflict_flags.length > 0 ? (
+                            examiner.conflict_flags.slice(0, 2).map((flag, flagIndex) => (
+                              <TooltipProvider key={`${flag.type}-${flagIndex}`}>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Badge variant={conflictVariant[flag.severity]}>{flag.type}</Badge>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p className="max-w-xs">{flag.description}</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            ))
+                          ) : (
+                            <Badge variant="outline">None</Badge>
+                          )}
+                          {examiner.conflict_flags.length > 2 ? (
+                            <Badge variant="secondary">+{examiner.conflict_flags.length - 2} more</Badge>
+                          ) : null}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
+                          <ExaminerDetail examiner={examiner}>
+                            <Button variant="outline" size="sm">
+                              <Eye className="mr-2 h-4 w-4" />
+                              View
+                            </Button>
+                          </ExaminerDetail>
+                          <Button variant="ghost" size="icon" onClick={() => toggleRow(examiner.id)}>
+                            {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                            <span className="sr-only">Toggle row details</span>
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                    {isExpanded ? (
+                      <TableRow className="bg-muted/20 hover:bg-muted/20">
+                        <TableCell colSpan={9}>
+                          <div className="grid gap-4 lg:grid-cols-[1.1fr_1fr]">
+                            <div className="space-y-3 rounded-xl border bg-background p-4">
+                              <div className="flex items-center gap-2">
+                                <BookCopy className="h-4 w-4 text-primary" />
+                                <h4 className="font-semibold">Research interests</h4>
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                {examiner.research_interests.length ? (
+                                  examiner.research_interests.map((interest) => (
+                                    <Badge key={interest} variant="secondary" className="rounded-md px-3 py-1">
+                                      {interest}
+                                    </Badge>
+                                  ))
+                                ) : (
+                                  <p className="text-sm text-muted-foreground">No research interests provided.</p>
+                                )}
+                              </div>
+                              <div className="pt-2">
+                                <p className="text-sm font-medium">Top publications</p>
+                                <div className="mt-2 space-y-2">
+                                  {examiner.top_publications && examiner.top_publications.length > 0 ? (
+                                    examiner.top_publications.slice(0, 3).map((publication) => (
+                                      <div key={publication.id} className="rounded-lg border p-3">
+                                        <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+                                          <p className="font-medium">{publication.title}</p>
+                                          <span className="text-sm text-muted-foreground">
+                                            {publication.year} · {publication.citation_count} citations
+                                          </span>
+                                        </div>
+                                        <p className="text-sm text-muted-foreground">{publication.journal}</p>
+                                      </div>
+                                    ))
+                                  ) : (
+                                    <p className="text-sm text-muted-foreground">No publication highlights available.</p>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="space-y-3 rounded-xl border bg-background p-4">
+                              <div className="flex items-center gap-2">
+                                <AlertTriangle className="h-4 w-4 text-primary" />
+                                <h4 className="font-semibold">Conflict review</h4>
+                              </div>
+                              {examiner.conflict_flags.length ? (
+                                examiner.conflict_flags.map((flag, flagIndex) => (
+                                  <div key={`${flag.type}-${flagIndex}`} className="rounded-lg border p-3">
+                                    <div className="flex items-center gap-2">
+                                      <Badge variant={conflictVariant[flag.severity]}>{flag.severity}</Badge>
+                                      <span className="font-medium">{flag.type}</span>
+                                    </div>
+                                    <p className="mt-2 text-sm text-muted-foreground">{flag.description}</p>
+                                  </div>
+                                ))
+                              ) : (
+                                <p className="text-sm text-muted-foreground">No conflicts flagged for this examiner.</p>
+                              )}
+                            </div>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ) : null}
+                  </Fragment>
+                );
+              })}
+            </TableBody>
+          </Table>
         )}
-      </CardHeader>
-
-      <CardContent className="p-0">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-12 text-center">#</TableHead>
-              <TableHead>Examiner</TableHead>
-              <TableHead className="min-w-[160px]">Match Score</TableHead>
-              <TableHead className="text-center">H-index</TableHead>
-              <TableHead className="text-center">Citations</TableHead>
-              <TableHead className="text-center">
-                <span title="Publications in last 5 years">Recent Pubs</span>
-              </TableHead>
-              <TableHead className="hidden lg:table-cell">Rank</TableHead>
-              <TableHead>Conflicts</TableHead>
-              <TableHead className="w-8" />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {results.examiners.map((examiner, idx) => (
-              <ExaminerRow key={examiner.id} examiner={examiner} rank={idx + 1} />
-            ))}
-          </TableBody>
-        </Table>
       </CardContent>
     </Card>
+  );
+}
+
+function SummaryTile({
+  label,
+  value,
+  icon: Icon,
+}: {
+  label: string;
+  value: string;
+  icon: ComponentType<{ className?: string }>;
+}) {
+  return (
+    <div className="rounded-xl border bg-card p-4">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">{label}</p>
+        <Icon className="h-4 w-4 text-primary" />
+      </div>
+      <p className="mt-3 line-clamp-2 text-lg font-semibold">{value}</p>
+    </div>
   );
 }

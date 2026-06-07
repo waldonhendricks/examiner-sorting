@@ -10,6 +10,7 @@ __pycache__/
 .venv/
 venv/
 .env
+.env.local
 *.log
 .DS_Store
 Thumbs.db
@@ -26,8 +27,6 @@ ssl/
 sentence_transformers_cache/
 # Python test artifacts
 .hypothesis/
-# npm/yarn lock files that are auto-generated
-# package-lock.json
 # Next.js build output
 out/
 # Type checking

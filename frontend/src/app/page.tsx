@@ -1,171 +1,112 @@
 "use client";
 
 import { useState } from "react";
-import { GraduationCap, BookOpen, Search } from "lucide-react";
-import { SearchForm } from "@/src/components/search-form";
-import { ExaminerTable } from "@/src/components/examiner-table";
-import { SearchResponse, ThesisSearchRequest } from "@/src/types";
-import { searchExaminers } from "@/src/lib/api";
+import type { ComponentType } from "react";
+import { ArrowRight, Briefcase, Building2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
-import { Separator } from "@/src/components/ui/separator";
+
+import { ExaminerTable } from "@/components/examiner-table";
+import { SearchForm } from "@/components/search-form";
+import { Badge } from "@/components/ui/badge";
+import { searchExaminers } from "@/lib/api";
+import type { SearchResponse, ThesisSearchRequest } from "@/types";
 
 export default function HomePage() {
-  const [results, setResults] = useState<SearchResponse | null>(null);
-  const [searchRequest, setSearchRequest] = useState<ThesisSearchRequest | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [searchResponse, setSearchResponse] = useState<SearchResponse | null>(null);
+  const [lastRequest, setLastRequest] = useState<ThesisSearchRequest | null>(null);
 
-  async function handleSearch(request: ThesisSearchRequest) {
+  const handleSearch = async (request: ThesisSearchRequest) => {
     setIsLoading(true);
     try {
-      const data = await searchExaminers(request);
-      setResults(data);
-      setSearchRequest(request);
-      if (data.total_found === 0) {
-        toast.info("No examiners found. Try broadening your search terms.");
-      } else {
-        toast.success(
-          `Found ${data.total_found} potential examiner${data.total_found !== 1 ? "s" : ""}`
-        );
-      }
-    } catch (err: unknown) {
-      const msg =
-        err instanceof Error ? err.message : "Failed to search examiners. Is the API running?";
-      toast.error(msg);
+      const response = await searchExaminers(request);
+      setSearchResponse(response);
+      setLastRequest(request);
+      toast.success(`Found ${response.total_found} examiner matches.`);
+    } catch (error) {
+      console.error(error);
+      toast.error("Search failed. Please check the API connection and try again.");
     } finally {
       setIsLoading(false);
     }
-  }
+  };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
-      {/* Header */}
-      <header className="border-b bg-white/80 backdrop-blur-sm sticky top-0 z-40">
-        <div className="container mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-primary text-primary-foreground">
-              <GraduationCap className="h-5 w-5" />
-            </div>
-            <div>
-              <h1 className="font-bold text-lg leading-tight">Examiner Finder SA</h1>
-              <p className="text-xs text-muted-foreground leading-tight hidden sm:block">
-                Thesis Examiner Discovery for South African Universities
+    <main className="pb-16">
+      <section className="border-b bg-gradient-to-b from-primary/[0.08] via-background to-background">
+        <div className="container py-16">
+          <div className="max-w-4xl space-y-6">
+            <Badge variant="secondary" className="rounded-full px-4 py-1 text-sm">
+              Built for postgraduate coordination teams
+            </Badge>
+            <div className="space-y-4">
+              <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">
+                Examiner Finder SA
+              </h1>
+              <p className="max-w-3xl text-lg text-muted-foreground">
+                Identify suitable thesis examiners from South African universities using research-fit scoring,
+                academic impact signals, and conflict screening.
               </p>
             </div>
-          </div>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <BookOpen className="h-4 w-4" />
-            <span className="hidden md:inline">15 SA Universities</span>
-          </div>
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <main className="container mx-auto px-4 py-6">
-        {/* How it works banner (shown when no results) */}
-        {!results && !isLoading && (
-          <div className="mb-6 rounded-lg border bg-white/60 p-4 backdrop-blur-sm">
-            <h2 className="font-semibold text-sm mb-3 flex items-center gap-2">
-              <Search className="h-4 w-4 text-primary" />
-              How It Works
-            </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs text-muted-foreground">
-              {[
-                {
-                  step: "1",
-                  title: "Enter thesis details",
-                  desc: "Provide title, abstract, degree type and optional keywords",
-                },
-                {
-                  step: "2",
-                  title: "AI analysis",
-                  desc: "Semantic embeddings extract research topics and domains",
-                },
-                {
-                  step: "3",
-                  title: "API discovery",
-                  desc: "Searches OpenAlex, Crossref & ORCID for SA researchers",
-                },
-                {
-                  step: "4",
-                  title: "Ranked results",
-                  desc: "Weighted scoring + conflict detection → ranked examiner list",
-                },
-              ].map(({ step, title, desc }) => (
-                <div key={step} className="flex gap-2.5">
-                  <span className="flex-shrink-0 w-5 h-5 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center">
-                    {step}
-                  </span>
-                  <div>
-                    <div className="font-medium text-foreground">{title}</div>
-                    <div>{desc}</div>
-                  </div>
-                </div>
-              ))}
+            <div className="grid gap-3 sm:grid-cols-3">
+              <HeroStat
+                icon={Building2}
+                title="Institutional coverage"
+                copy="Review experts across universities and departments."
+              />
+              <HeroStat
+                icon={Sparkles}
+                title="Fit-based ranking"
+                copy="Topic similarity is blended with citation and career metrics."
+              />
+              <HeroStat
+                icon={Briefcase}
+                title="Conflict awareness"
+                copy="Supervisor and institutional inputs surface possible risks early."
+              />
+            </div>
+            <div className="inline-flex items-center gap-2 rounded-full border bg-background px-4 py-2 text-sm text-muted-foreground shadow-sm">
+              Enter thesis details below
+              <ArrowRight className="h-4 w-4" />
             </div>
           </div>
-        )}
-
-        <div className="grid grid-cols-1 lg:grid-cols-[400px_1fr] gap-6">
-          {/* Search Form */}
-          <div className="lg:sticky lg:top-20 lg:self-start">
-            <SearchForm onSearch={handleSearch} isLoading={isLoading} />
-          </div>
-
-          {/* Results */}
-          <div>
-            {results && searchRequest ? (
-              <ExaminerTable results={results} searchRequest={searchRequest} />
-            ) : (
-              <div className="flex flex-col items-center justify-center rounded-lg border border-dashed bg-white/40 h-64 text-center gap-3 text-muted-foreground">
-                <GraduationCap className="h-10 w-10 opacity-30" />
-                <div>
-                  <p className="font-medium">No search results yet</p>
-                  <p className="text-sm">
-                    Fill in the form and click &ldquo;Find Examiners&rdquo; to get started
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
         </div>
-      </main>
+      </section>
 
-      {/* Footer */}
-      <footer className="mt-12 border-t bg-white/60 backdrop-blur-sm">
-        <div className="container mx-auto px-4 py-4 text-center text-xs text-muted-foreground">
-          <p>
-            Examiner Finder SA · Powered by{" "}
-            <a
-              href="https://openalex.org"
-              target="_blank"
-              rel="noreferrer"
-              className="underline"
-            >
-              OpenAlex
-            </a>
-            ,{" "}
-            <a
-              href="https://www.crossref.org"
-              target="_blank"
-              rel="noreferrer"
-              className="underline"
-            >
-              Crossref
-            </a>{" "}
-            &amp;{" "}
-            <a
-              href="https://orcid.org"
-              target="_blank"
-              rel="noreferrer"
-              className="underline"
-            >
-              ORCID
-            </a>
-          </p>
-          <Separator className="my-2" />
-          <p>For use by postgraduate coordinators at South African universities</p>
+      <section className="container space-y-8 py-10">
+        <SearchForm isLoading={isLoading} onSubmit={handleSearch} />
+        <ExaminerTable
+          examiners={searchResponse?.examiners || []}
+          request={lastRequest}
+          thesisTitle={searchResponse?.thesis_title}
+          extractedKeywords={searchResponse?.extracted_keywords}
+          researchDomains={searchResponse?.research_domains}
+        />
+      </section>
+    </main>
+  );
+}
+
+function HeroStat({
+  icon: Icon,
+  title,
+  copy,
+}: {
+  icon: ComponentType<{ className?: string }>;
+  title: string;
+  copy: string;
+}) {
+  return (
+    <div className="rounded-2xl border bg-background/80 p-4 shadow-sm backdrop-blur">
+      <div className="flex items-center gap-3">
+        <div className="rounded-full bg-primary/10 p-2 text-primary">
+          <Icon className="h-5 w-5" />
         </div>
-      </footer>
+        <div>
+          <p className="font-semibold">{title}</p>
+          <p className="text-sm text-muted-foreground">{copy}</p>
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,26 +1,37 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
-import "./globals.css";
+import Script from "next/script";
+import type { ReactNode } from "react";
 import { Toaster } from "sonner";
 
-const inter = Inter({ subsets: ["latin"] });
+import "@fontsource/inter";
+import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Examiner Finder SA",
-  description:
-    "Find suitable thesis examiners from South African universities using AI-powered semantic matching.",
+  description: "Find suitable thesis examiners from South African universities",
 };
 
 export default function RootLayout({
   children,
-}: {
-  children: React.ReactNode;
-}) {
+}: Readonly<{
+  children: ReactNode;
+}>) {
   return (
-    <html lang="en">
-      <body className={inter.className}>
+    <html lang="en" suppressHydrationWarning>
+      <body>
+        <Script id="theme-script" strategy="beforeInteractive">
+          {`try {
+            const storedTheme = window.localStorage.getItem("theme");
+            const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+            if (storedTheme === "dark" || (!storedTheme && prefersDark)) {
+              document.documentElement.classList.add("dark");
+            }
+          } catch (error) {
+            console.warn("Theme initialization failed", error);
+          }`}
+        </Script>
         {children}
-        <Toaster position="top-right" richColors />
+        <Toaster richColors position="top-right" />
       </body>
     </html>
   );
