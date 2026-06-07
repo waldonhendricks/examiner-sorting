@@ -205,6 +205,55 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 
 ---
 
+## External Data Methodology
+
+This application does not scrape HTML pages from university or journal websites. It retrieves structured researcher and publication data from public scholarly APIs and then ranks the results locally.
+
+### External Sources
+
+- **OpenAlex** — Primary source for researcher discovery, authorship, affiliations, publication history, citation counts, and h-index metadata.
+- **Crossref** — Secondary source for publication metadata and subject terms used to expand topic coverage.
+- **ORCID** — Optional enrichment source for researcher keywords and email addresses when an ORCID identifier is available.
+
+### Search Methodology
+
+1. The frontend sends the thesis title, abstract, degree type, keywords, and supervisor details to `POST /api/search`.
+2. The backend combines the thesis title, abstract, and keywords into a single search text.
+3. The NLP service extracts keywords, identifies research domains, and generates an embedding for semantic similarity scoring.
+4. The backend queries OpenAlex and Crossref in parallel.
+5. OpenAlex results are filtered to researchers affiliated with recognized South African universities.
+6. Candidate researchers are enriched with author-level metadata such as research topics, citation counts, publication counts, and ORCID identifiers.
+7. If an ORCID is present, the backend optionally queries ORCID for additional keywords and contact information.
+8. The ranking service scores candidates using topic similarity, h-index, citation count, recent publication output, and academic rank.
+9. Conflict checks flag same-university, same-department, and co-authorship risks.
+10. The final ranked list is stored in PostgreSQL and returned to the frontend as a single API response.
+
+### External API Flow
+
+The system's outward-facing API is the FastAPI backend. Clients interact only with this service, while the backend manages upstream scholarly API calls internally.
+
+```text
+Frontend -> POST /api/search -> FastAPI backend
+FastAPI backend -> OpenAlex /works and /authors/{id}
+FastAPI backend -> Crossref /works
+FastAPI backend -> ORCID /v3.0/{orcid}/person
+FastAPI backend -> PostgreSQL (cache/persistence of examiner data)
+FastAPI backend -> JSON response to frontend
+```
+
+### Fallback Behavior
+
+If external API discovery returns no OpenAlex candidates, the backend falls back to locally stored examiner records from PostgreSQL. This allows the application to keep producing ranked results even when live external discovery is sparse or temporarily unavailable.
+
+### Operational Notes
+
+- `OPENALEX_EMAIL` should be set to an institutional email address so requests use OpenAlex's polite pool.
+- External API results are normalized to a fixed set of South African universities before ranking.
+- Crossref data improves keyword coverage, but OpenAlex remains the primary source for examiner candidates.
+- ORCID enrichment is best-effort and does not block search completion if unavailable.
+
+---
+
 ## Running Tests
 
 ### Backend Tests
