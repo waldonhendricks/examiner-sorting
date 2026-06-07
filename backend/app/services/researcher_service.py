@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 import httpx
@@ -54,7 +54,7 @@ class ResearcherService:
         search_query = " ".join(dict.fromkeys([query] + keywords[:8]))
         params = {
             "search": search_query,
-            "filter": "institutions.country_code:ZA,publication_year:>={}".format(datetime.utcnow().year - 10),
+            "filter": "institutions.country_code:ZA,publication_year:>={}".format(datetime.now(timezone.utc).year - 10),
             "per-page": 50,
             "page": 1,
             "mailto": settings.OPENALEX_EMAIL,
@@ -105,7 +105,7 @@ class ResearcherService:
                                 "coauthors": set(),
                             },
                         )
-                        record["recent_publication_count"] += 1 if publication.get("year", 0) >= datetime.utcnow().year - 5 else 0
+                        record["recent_publication_count"] += 1 if publication.get("year", 0) >= datetime.now(timezone.utc).year - 5 else 0
                         if publication not in record["publications"]:
                             record["publications"].append(publication)
                         for coauthor in work.get("authorships", []):

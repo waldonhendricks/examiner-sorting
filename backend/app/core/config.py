@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     VERSION: str = "1.0.0"
     DEBUG: bool = False
 
-    DATABASE_URL: str = "******localhost:5432/examiner_db"
+    DATABASE_URL: str = "postgresql://user:password@localhost:5432/examiner_db"
     REDIS_URL: str = "redis://localhost:6379"
     OPENAI_API_KEY: str = ""
     OPENALEX_EMAIL: str = "admin@examiner-finder.ac.za"

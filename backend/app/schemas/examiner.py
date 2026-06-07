@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -69,7 +69,7 @@ class SearchResponse(BaseModel):
     research_domains: List[str]
     examiners: List[ExaminerResponse]
     total_found: int
-    generated_at: datetime = Field(default_factory=datetime.utcnow)
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class SearchHistoryResponse(BaseModel):

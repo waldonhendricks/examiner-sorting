@@ -191,7 +191,7 @@ Copy `.env.example` to `.env` and configure:
 POSTGRES_PASSWORD=your-secure-password
 
 # Backend settings
-DATABASE_URL=******localhost:5432/examiner_db
+DATABASE_URL=postgresql://examiner_user:password@localhost:5432/examiner_db
 REDIS_URL=redis://localhost:6379
 SECRET_KEY=your-long-random-secret-key
 
