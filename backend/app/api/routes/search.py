@@ -31,6 +31,12 @@ async def search_examiners(request: ThesisSearchRequest, db: Session = Depends(g
             researcher_service.search_openalex(search_text, keywords),
             researcher_service.search_crossref(search_text),
         )
+
+        if not openalex_results:
+            openalex_results = _load_local_examiners(db, search_text)
+
+        openalex_results = _dedupe_candidates(openalex_results)
+
         crossref_terms = []
         for item in crossref_results[:10]:
             crossref_terms.extend(item.get("subjects", []))
@@ -62,6 +68,7 @@ async def search_examiners(request: ThesisSearchRequest, db: Session = Depends(g
             enriched_examiners.append(researcher)
 
         ranked_examiners = ranking_service.rank_examiners(enriched_examiners, thesis_embedding)
+        ranked_examiners = _dedupe_candidates(ranked_examiners)
         for examiner in ranked_examiners:
             examiner["conflict_flags"] = ranking_service.detect_conflicts(
                 examiner,
@@ -71,10 +78,21 @@ async def search_examiners(request: ThesisSearchRequest, db: Session = Depends(g
 
         for researcher in ranked_examiners:
             examiner = None
+            if researcher.get("id"):
+                examiner = db.query(Examiner).filter(Examiner.id == researcher["id"]).first()
             if researcher.get("openalex_id"):
-                examiner = db.query(Examiner).filter(Examiner.openalex_id == researcher["openalex_id"]).first()
+                examiner = examiner or db.query(Examiner).filter(Examiner.openalex_id == researcher["openalex_id"]).first()
             elif researcher.get("orcid"):
-                examiner = db.query(Examiner).filter(Examiner.orcid == researcher["orcid"]).first()
+                examiner = examiner or db.query(Examiner).filter(Examiner.orcid == researcher["orcid"]).first()
+            if examiner is None:
+                examiner = (
+                    db.query(Examiner)
+                    .filter(
+                        Examiner.name == researcher.get("name"),
+                        Examiner.university == researcher.get("university"),
+                    )
+                    .first()
+                )
 
             examiner_payload = {
                 "name": researcher.get("name"),
@@ -129,6 +147,98 @@ async def search_examiners(request: ThesisSearchRequest, db: Session = Depends(g
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Unable to complete examiner search: {exc}",
         ) from exc
+
+
+def _load_local_examiners(db: Session, search_text: str) -> list[dict]:
+    examiners = db.query(Examiner).all()
+    candidates: list[dict] = []
+
+    for examiner in examiners:
+        publications = (
+            db.query(Publication)
+            .filter(Publication.examiner_id == examiner.id)
+            .order_by(Publication.year.desc().nullslast(), Publication.id.desc())
+            .all()
+        )
+
+        profile_text = " ".join(
+            filter(
+                None,
+                [
+                    examiner.name,
+                    examiner.university,
+                    examiner.department,
+                    " ".join(examiner.research_interests or []),
+                    " ".join(publication.title for publication in publications if publication.title),
+                ],
+            )
+        )
+
+        candidates.append(
+            {
+                "name": examiner.name,
+                "id": examiner.id,
+                "university": examiner.university,
+                "department": examiner.department,
+                "email": examiner.email,
+                "orcid": examiner.orcid,
+                "openalex_id": examiner.openalex_id,
+                "research_interests": examiner.research_interests or [],
+                "h_index": examiner.h_index or 0,
+                "citation_count": examiner.citation_count or 0,
+                "publication_count": examiner.publication_count or len(publications),
+                "recent_publication_count": examiner.recent_publication_count or 0,
+                "academic_rank": examiner.academic_rank,
+                "publications": [
+                    {
+                        "title": publication.title,
+                        "abstract": publication.abstract,
+                        "year": publication.year,
+                        "journal": publication.journal,
+                        "doi": publication.doi,
+                        "citation_count": publication.citation_count or 0,
+                    }
+                    for publication in publications
+                ],
+                "embedding": nlp_service.generate_embedding(profile_text),
+            }
+        )
+
+    return candidates
+
+
+def _dedupe_candidates(candidates: list[dict]) -> list[dict]:
+    deduped: list[dict] = []
+    seen: set[str] = set()
+
+    for candidate in candidates:
+        key = _candidate_key(candidate)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(candidate)
+
+    return deduped
+
+
+def _candidate_key(candidate: dict) -> str:
+    openalex_id = candidate.get("openalex_id")
+    if openalex_id:
+        return f"openalex:{openalex_id}"
+
+    orcid = candidate.get("orcid")
+    if orcid:
+        return f"orcid:{orcid}"
+
+    name = (candidate.get("name") or "").strip().lower()
+    university = (candidate.get("university") or "").strip().lower()
+    if name or university:
+        return f"name_university:{name}|{university}"
+
+    if candidate.get("id") is not None:
+        return f"id:{candidate['id']}"
+
+    return "unknown"
 
 
 @router.get("/api/search/history", response_model=list[SearchHistoryResponse])
